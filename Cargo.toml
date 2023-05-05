@@ -2,6 +2,8 @@
 name = "async_message_dispatcher"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "A library to make dispatching messages to asynchronous handlers easier."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
