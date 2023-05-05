@@ -87,7 +87,7 @@ struct Context<K: Key, M> {
     execution_state: ExecutionState<K, M>,
 }
 
-pub enum WaiterState<K: Key, M> {
+pub enum ConsumerState<K: Key, M> {
     Free(Consumer<K, M>),
     Taken,
 }
@@ -103,7 +103,7 @@ impl<K: Key, M> Dispatcher<K, M> {
         }
     }
 
-    pub fn notify(&self, key: K, message: M) -> WaiterState<K, M> {
+    pub fn notify(&self, key: K, message: M) -> ConsumerState<K, M> {
         let mut contexts = self.contexts.lock().unwrap();
         let context = contexts.entry(key).or_insert_with(|| Context {
             queue: VecDeque::new(),
@@ -122,9 +122,9 @@ impl<K: Key, M> Dispatcher<K, M> {
                     MessageAwaitingState::NotWaiting => (),
                     MessageAwaitingState::Waiting(waker) => waker.wake(),
                 }
-                WaiterState::Taken
+                ConsumerState::Taken
             }
-            ExecutionState::NotRunning(waiter) => WaiterState::Free(waiter),
+            ExecutionState::NotRunning(consumer) => ConsumerState::Free(consumer),
         }
     }
 }
@@ -151,24 +151,24 @@ mod tests {
     fn it_works() {
         let dispatcher = Dispatcher::new();
         for _ in 0..2 {
-            let waiter_1 = match dispatcher.notify(1, "1: 1") {
-                WaiterState::Free(waiter) => waiter,
-                WaiterState::Taken => unreachable!(),
+            let consumer_1 = match dispatcher.notify(1, "1: 1") {
+                ConsumerState::Free(consumer) => consumer,
+                ConsumerState::Taken => unreachable!(),
             };
-            assert!(matches!(dispatcher.notify(1, "1: 3"), WaiterState::Taken));
-            let waiter_2 = match dispatcher.notify(2, "2: 1") {
-                WaiterState::Free(waiter) => waiter,
-                WaiterState::Taken => unreachable!(),
+            assert!(matches!(dispatcher.notify(1, "1: 3"), ConsumerState::Taken));
+            let consumer_2 = match dispatcher.notify(2, "2: 1") {
+                ConsumerState::Free(consumer) => consumer,
+                ConsumerState::Taken => unreachable!(),
             };
-            assert!(matches!(dispatcher.notify(2, "2: 2"), WaiterState::Taken));
-            assert!(matches!(dispatcher.notify(1, "1: 2"), WaiterState::Taken));
-            assert!(matches!(dispatcher.notify(2, "2: 3"), WaiterState::Taken));
+            assert!(matches!(dispatcher.notify(2, "2: 2"), ConsumerState::Taken));
+            assert!(matches!(dispatcher.notify(1, "1: 2"), ConsumerState::Taken));
+            assert!(matches!(dispatcher.notify(2, "2: 3"), ConsumerState::Taken));
             let (result_1, result_2) = tokio::runtime::Builder::new_current_thread()
                 .build()
                 .unwrap()
-                .block_on(
-                    async move { tokio::join!(dummy_handler(waiter_1), dummy_handler(waiter_2)) },
-                );
+                .block_on(async move {
+                    tokio::join!(dummy_handler(consumer_1), dummy_handler(consumer_2))
+                });
             assert!(dispatcher.contexts.lock().unwrap().is_empty());
             assert_eq!(result_1, HashSet::from(["1: 1", "1: 2", "1: 3"]));
             assert_eq!(result_2, HashSet::from(["2: 1", "2: 2", "2: 3"]));
