@@ -17,7 +17,7 @@ pub struct Filter<'a, F, K: Key, M> {
     error_message: &'static str,
 }
 
-pub fn handle<K, M, Fut, F>(dispatcher: &mut Dispatcher<K, M>, key: K, message: M, handler: F)
+pub fn handle<K, M, Fut, F>(dispatcher: &Dispatcher<K, M>, key: K, message: M, handler: F)
 where
     K: Key,
     Fut: Future + Send + 'static,
