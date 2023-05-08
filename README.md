@@ -40,7 +40,7 @@ This library allows you to write something like this:
 impl Handler {
     fn handle_message(&self, message: Message) -> String {
         use async_message_dispatcher::ConsumerState::{Free, Taken};
-        match dispatcher.notify(message.user_id, message) {
+        match self.dispatcher.notify(message.user_id, message) {
             Free(consumer) => {
                 tokio::spawn(async move {
                     let message = consumer.take().await.unwrap();
@@ -73,6 +73,22 @@ async fn get_number<K: Key, M>(consumer: Consumer<K, M>) -> i64 {
     }
 }
 ```
+
+Also, if you don't want to write boring abstractions yourself, you can use `utils` from this module (you need to enable them as a feature first). For example, you can easily run the handler of a new message:
+
+```
+utils::handle(&mut dispatcher, message.user_id, message, |consumer| async move {
+    // Your logic here
+});
+```
+
+Or, you can easily make a filter:
+
+```
+let filter = utils::Filter::new(|message| message.text != "", &mut consumer, "Your message shouldn't be empty");
+```
+
+Be aware that the `utils` module is not very flexible.
 
 # Usage
 
