@@ -6,6 +6,9 @@ use std::{
     task::{Poll, Waker},
 };
 
+#[cfg(feature = "utils")]
+pub mod utils;
+
 pub trait Key: Eq + Hash + Copy {}
 impl<T: Eq + Hash + Copy> Key for T {}
 
