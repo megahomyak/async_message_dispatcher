@@ -7,14 +7,13 @@ use async_trait::async_trait;
 use crate::{Consumer, Dispatcher, Key};
 
 #[async_trait]
-pub trait Message {
-    async fn respond(&self, text: &str);
+pub trait Message<R> {
+    async fn respond(&self, response: R);
 }
 
 pub struct Filter<'a, F, K: Key, M> {
-    filter: F,
+    filter: &'a F,
     consumer: &'a mut Consumer<K, M>,
-    error_message: &'a str,
 }
 
 pub fn handle<K, M, Fut, F>(dispatcher: &Dispatcher<K, M>, key: K, message: M, handler: F)
@@ -33,23 +32,22 @@ where
     }
 }
 
-impl<'a, K: Key, M: Message, Output, F: Fn(&mut Consumer<K, M>) -> Option<Output>>
-    Filter<'a, F, K, M>
+impl<'a, K, Response, M, Output, F> Filter<'a, F, K, M>
+where
+    K: Key,
+    M: Message<Response>,
+    F: Fn(&mut Consumer<K, M>) -> Result<Output, Response>,
 {
-    pub fn new(filter: F, consumer: &'a mut Consumer<K, M>, error_message: &'a str) -> Self {
-        Self {
-            filter,
-            consumer,
-            error_message,
-        }
+    pub fn new(filter: &'a F, consumer: &'a mut Consumer<K, M>) -> Self {
+        Self { filter, consumer }
     }
 
     pub async fn take(&mut self) -> Output {
         loop {
             let message = self.consumer.take().await.unwrap();
             match (self.filter)(&mut self.consumer) {
-                Some(output) => return output,
-                None => message.respond(self.error_message).await,
+                Ok(output) => return output,
+                Err(error) => message.respond(error).await,
             }
         }
     }
