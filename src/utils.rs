@@ -11,11 +11,6 @@ pub trait Message<R> {
     async fn respond(&self, response: R);
 }
 
-pub struct Filter<'a, F, K: Key, M> {
-    filter: &'a F,
-    consumer: &'a mut Consumer<K, M>,
-}
-
 pub fn handle<K, M, Fut, F>(dispatcher: &Dispatcher<K, M>, key: K, message: M, handler: F)
 where
     K: Key,
@@ -32,23 +27,17 @@ where
     }
 }
 
-impl<'a, K, Response, M, Output, F> Filter<'a, F, K, M>
+pub async fn take_filtered<O, F, R, K, M>(consumer: &mut Consumer<K, M>, filter: &F) -> O
 where
+    F: Fn(&mut Consumer<K, M>) -> Result<O, R>,
     K: Key,
-    M: Message<Response>,
-    F: Fn(&mut Consumer<K, M>) -> Result<Output, Response>,
+    M: Message<R>,
 {
-    pub fn new(filter: &'a F, consumer: &'a mut Consumer<K, M>) -> Self {
-        Self { filter, consumer }
-    }
-
-    pub async fn take(&mut self) -> Output {
-        loop {
-            let message = self.consumer.take().await.unwrap();
-            match (self.filter)(&mut self.consumer) {
-                Ok(output) => return output,
-                Err(error) => message.respond(error).await,
-            }
+    loop {
+        let message = consumer.take().await.unwrap();
+        match filter(consumer) {
+            Ok(output) => return output,
+            Err(error) => message.respond(error).await,
         }
     }
 }
