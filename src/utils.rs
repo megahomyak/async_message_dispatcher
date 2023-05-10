@@ -27,15 +27,18 @@ where
     }
 }
 
-pub async fn take_filtered<F, O, R, K, M>(consumer: &mut Consumer<K, M>, filter: &F) -> O
+pub async fn take_filtered<F, O, R, K, M, Fut: Future<Output = Result<O, (M, R)>>>(
+    consumer: &mut Consumer<K, M>,
+    filter: &F,
+) -> O
 where
-    F: Fn(M) -> Result<O, (M, R)>,
+    F: Fn(M) -> Fut,
     K: Key,
     M: Message<R>,
 {
     loop {
         let message = consumer.take().await.unwrap();
-        match filter(message) {
+        match filter(message).await {
             Ok(output) => return output,
             Err((message, error)) => message.respond(error).await,
         }
