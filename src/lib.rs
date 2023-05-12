@@ -6,9 +6,6 @@ use std::{
     task::{Poll, Waker},
 };
 
-#[cfg(feature = "utils")]
-pub mod utils;
-
 pub trait Key: Eq + Hash + Copy {}
 impl<T: Eq + Hash + Copy> Key for T {}
 
@@ -95,18 +92,18 @@ pub enum ConsumerState<K: Key, M> {
     Taken,
 }
 
-pub struct Dispatcher<K: Key, M> {
+pub struct Storage<K: Key, M> {
     contexts: Arc<Mutex<HashMap<K, Context<K, M>>>>,
 }
 
-impl<K: Key, M> Dispatcher<K, M> {
+impl<K: Key, M> Storage<K, M> {
     pub fn new() -> Self {
         Self {
             contexts: Default::default(),
         }
     }
 
-    pub fn notify(&self, key: K, message: M) -> ConsumerState<K, M> {
+    pub fn add(&self, key: K, message: M) -> ConsumerState<K, M> {
         let mut contexts = self.contexts.lock().unwrap();
         let context = contexts.entry(key).or_insert_with(|| Context {
             queue: VecDeque::new(),
@@ -132,6 +129,31 @@ impl<K: Key, M> Dispatcher<K, M> {
     }
 }
 
+pub struct Dispatcher<K: Key, M, F> {
+    handler: F,
+    storage: Storage<K, M>,
+}
+
+impl<K: Key, M, F: Fn(Consumer<K, M>)> Dispatcher<K, M, F> {
+    pub fn new(handler: F) -> Self {
+        Self {
+            handler,
+            storage: Storage::new(),
+        }
+    }
+
+    pub fn storage(&self) -> &Storage<K, M> {
+        &self.storage
+    }
+
+    pub fn dispatch(&self, key: K, message: M) {
+        match self.storage.add(key, message) {
+            ConsumerState::Free(consumer) => (self.handler)(consumer),
+            ConsumerState::Taken => (),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -152,27 +174,27 @@ mod tests {
     /// only *hope* so.
     #[test]
     fn it_works() {
-        let dispatcher = Dispatcher::new();
+        let storage = Storage::new();
         for _ in 0..2 {
-            let consumer_1 = match dispatcher.notify(1, "1: 1") {
+            let consumer_1 = match storage.add(1, "1: 1") {
                 ConsumerState::Free(consumer) => consumer,
                 ConsumerState::Taken => unreachable!(),
             };
-            assert!(matches!(dispatcher.notify(1, "1: 3"), ConsumerState::Taken));
-            let consumer_2 = match dispatcher.notify(2, "2: 1") {
+            assert!(matches!(storage.add(1, "1: 3"), ConsumerState::Taken));
+            let consumer_2 = match storage.add(2, "2: 1") {
                 ConsumerState::Free(consumer) => consumer,
                 ConsumerState::Taken => unreachable!(),
             };
-            assert!(matches!(dispatcher.notify(2, "2: 2"), ConsumerState::Taken));
-            assert!(matches!(dispatcher.notify(1, "1: 2"), ConsumerState::Taken));
-            assert!(matches!(dispatcher.notify(2, "2: 3"), ConsumerState::Taken));
+            assert!(matches!(storage.add(2, "2: 2"), ConsumerState::Taken));
+            assert!(matches!(storage.add(1, "1: 2"), ConsumerState::Taken));
+            assert!(matches!(storage.add(2, "2: 3"), ConsumerState::Taken));
             let (result_1, result_2) = tokio::runtime::Builder::new_current_thread()
                 .build()
                 .unwrap()
                 .block_on(async move {
                     tokio::join!(dummy_handler(consumer_1), dummy_handler(consumer_2))
                 });
-            assert!(dispatcher.contexts.lock().unwrap().is_empty());
+            assert!(storage.contexts.lock().unwrap().is_empty());
             assert_eq!(result_1, HashSet::from(["1: 1", "1: 2", "1: 3"]));
             assert_eq!(result_2, HashSet::from(["2: 1", "2: 2", "2: 3"]));
         }

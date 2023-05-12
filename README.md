@@ -37,35 +37,29 @@ Even if used with a specialized library, this still requires the user to write a
 This library allows you to write something like this:
 
 ```
-impl Handler {
-    fn handle_message(&self, message: Message) -> String {
-        use async_message_dispatcher::ConsumerState::{Free, Taken};
-        match self.dispatcher.notify(message.user_id, message) {
-            Free(consumer) => {
-                tokio::spawn(async move {
-                    let message = consumer.take().await.unwrap();
-                    message.respond("Please, enter your age.").await;
-                    let age = consumer.take().await.unwrap();
-                    age.respond("Now, enter your name.").await;
-                    let name = consumer.take().await.unwrap();
-                    name.respond("Now, enter your bio.").await;
-                    let bio = consumer.take().await.unwrap();
-                    self.add_user(age.text, name.text, bio.text);
-                    bio.respond("You're registered successfully!.").await;
-                });
-            }
-            Taken => (),
-        }
-    }
-}
+let dispatcher = Dispatcher::new(|consumer| tokio::spawn(async move {
+    let message = consumer.take().await.unwrap();
+    message.respond("Please, enter your age.").await;
+    let age = consumer.take().await.unwrap();
+    age.respond("Now, enter your name.").await;
+    let name = consumer.take().await.unwrap();
+    name.respond("Now, enter your bio.").await;
+    let bio = consumer.take().await.unwrap();
+    self.add_user(age.text, name.text, bio.text);
+    bio.respond("You're registered successfully!.").await;
+}));
+
+// Then, somewhere after that...
+
+dispatcher.dispatch(key, message); // And the message will go to the handler!
 ```
 
 Such approach gives code that is much more readable, especially when there are many states. Also, if you want, it's pretty easy to add message filtering:
 
 ```
-async fn get_number<K: Key, M>(consumer: Consumer<K, M>) -> i64 {
+async fn get_number<K: Key, M>(consumer: &mut Consumer<K, M>) -> i64 {
     loop {
-        let message = consumer.take().await;
+        let message = consumer.take().await.unwrap();
         let number: Ok(i64) = message.text.parse() else {
             message.respond("Please, enter a number.").await;
             continue;
@@ -74,22 +68,6 @@ async fn get_number<K: Key, M>(consumer: Consumer<K, M>) -> i64 {
 }
 ```
 
-Also, if you don't want to write boring abstractions yourself, you can use `utils` from this module (you need to enable them as a feature first). For example, you can easily run the handler of a new message:
-
-```
-utils::handle(&mut dispatcher, message.user_id, message, |consumer| async move {
-    // Your logic here
-});
-```
-
-Or, you can easily make a filter:
-
-```
-let filter = utils::Filter::new(|message| message.text != "", &mut consumer, "Your message shouldn't be empty");
-```
-
-Be aware that the `utils` module is not very flexible.
-
 # Usage
 
-Create a `Dispatcher`, `.notify()` it about new messages, and use the returned `Consumer` (if it is `Free`) in message handlers.
+Use a `Dispatcher` if you want to dispatch every message in the same way, or use a `Storage` if you want to manage `Consumer`s yourself.

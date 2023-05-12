@@ -8,11 +8,6 @@ description = "A library to make dispatching messages to asynchronous handlers e
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-trait = { version = "0.1.68", optional = true }
-tokio = { version = "1.28.0", features = ["rt"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.28.0", features = ["rt", "macros"] }
-
-[features]
-utils = ["dep:tokio", "dep:async-trait"]
